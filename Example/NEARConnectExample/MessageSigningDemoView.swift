@@ -1,11 +1,5 @@
-//
-//  MessageSigningDemoView.swift
-//  near-connect-ios
-//
-//  Demo view for calling a smart contract function
-//
-
 import SwiftUI
+import NEARConnect
 
 struct MessageSigningDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
@@ -131,9 +125,4 @@ struct MessageSigningDemoView: View {
             }
         }
     }
-}
-
-#Preview {
-    MessageSigningDemoView()
-        .environmentObject(NEARWalletManager())
 }

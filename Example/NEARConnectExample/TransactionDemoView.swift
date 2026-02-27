@@ -1,11 +1,5 @@
-//
-//  TransactionDemoView.swift
-//  near-connect-ios
-//
-//  Demo view for sending NEAR tokens
-//
-
 import SwiftUI
+import NEARConnect
 
 struct TransactionDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
@@ -117,9 +111,4 @@ struct TransactionDemoView: View {
             }
         }
     }
-}
-
-#Preview {
-    TransactionDemoView()
-        .environmentObject(NEARWalletManager())
 }

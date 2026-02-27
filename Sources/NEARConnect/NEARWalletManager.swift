@@ -1,14 +1,8 @@
-//
-//  NEARWalletManager.swift
-//  near-connect-ios
-//
-//  Manages NEAR wallet state and coordinates with the WebView bridge
-//
-
 import Foundation
 import SwiftUI
 import Combine
 import WebKit
+import Security
 
 /// Manages NEAR wallet connection state.
 ///
@@ -16,34 +10,34 @@ import WebKit
 /// The WebView lives for the lifetime of the manager so that wallet sessions
 /// and JS state survive across sheet presentations.
 @MainActor
-class NEARWalletManager: ObservableObject {
+public class NEARWalletManager: ObservableObject {
 
     // MARK: - Published State
 
-    @Published var currentAccount: NEARAccount?
-    @Published var isBusy = false
-    @Published var lastError: String?
-    @Published private(set) var isBridgeReady = false
+    @Published public var currentAccount: NEARAccount?
+    @Published public var isBusy = false
+    @Published public var lastError: String?
+    @Published public private(set) var isBridgeReady = false
 
     /// When true, the wallet WebView should be presented to the user
     /// (for connect flow, transaction approval, etc.)
-    @Published var showWalletUI = false
+    @Published public var showWalletUI = false
 
-    /// When true, the wallet selector should be auto-triggered on sheet appear
-    var pendingConnect = false
+    /// When true, the wallet selector should be auto-triggered on sheet appear.
+    public var pendingConnect = false
 
-    /// Network for wallet connections ("mainnet" or "testnet")
-    enum Network: String {
+    /// Network for wallet connections.
+    public enum Network: String, Sendable {
         case mainnet
         case testnet
     }
-    @Published var network: Network = .mainnet
+    @Published public var network: Network = .mainnet
 
-    var isSignedIn: Bool { currentAccount != nil }
+    public var isSignedIn: Bool { currentAccount != nil }
 
     // MARK: - WebView (owned by this manager, persistent)
 
-    private(set) var bridgeWebView: WKWebView!
+    public private(set) var bridgeWebView: WKWebView!
     private var coordinator: WebViewCoordinator!
 
     // MARK: - Continuations for async operations
@@ -59,7 +53,7 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Init
 
-    init(userDefaults: UserDefaults = .standard) {
+    public init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         loadStoredAccount()
         setupBridgeWebView()
@@ -94,7 +88,7 @@ class NEARWalletManager: ObservableObject {
     }
 
     private func loadBridgePage() {
-        guard let htmlURL = Bundle.main.url(forResource: "near-connect-bridge", withExtension: "html") else {
+        guard let htmlURL = Bundle.module.url(forResource: "near-connect-bridge", withExtension: "html") else {
             lastError = "Bridge HTML not found in bundle"
             return
         }
@@ -108,8 +102,8 @@ class NEARWalletManager: ObservableObject {
         }
     }
 
-    /// Remove all popup webviews (wallet pages opened via window.open)
-    func closePopups() {
+    /// Remove all popup webviews (wallet pages opened via window.open).
+    public func closePopups() {
         coordinator.closeAllPopups()
     }
 
@@ -202,17 +196,19 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Connect Wallet
 
-    func connect() {
+    /// Present the wallet selector.
+    public func connect() {
         pendingConnect = true
         showWalletUI = true
     }
 
-    func triggerWalletSelector() {
+    /// Trigger the near-connect wallet selector UI.
+    public func triggerWalletSelector() {
         bridgeWebView.callNEARConnect("window.nearConnect()")
     }
 
-    /// Connect with a specific wallet by ID
-    func connect(walletId: String) {
+    /// Connect with a specific wallet by ID.
+    public func connect(walletId: String) {
         showWalletUI = true
         let escaped = walletId.replacingOccurrences(of: "'", with: "\\'")
         bridgeWebView.callNEARConnect("window.nearConnectWallet('\(escaped)')")
@@ -220,7 +216,8 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Disconnect
 
-    func disconnect() {
+    /// Disconnect the current wallet.
+    public func disconnect() {
         bridgeWebView.callNEARConnect("window.nearDisconnect()")
         currentAccount = nil
         clearStoredAccount()
@@ -229,12 +226,19 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Sign & Send Transaction
 
-    struct TransactionResult {
-        let transactionHashes: [String]
-        let rawResult: String?
+    /// Result of a signed and sent transaction.
+    public struct TransactionResult {
+        public let transactionHashes: [String]
+        public let rawResult: String?
+
+        public init(transactionHashes: [String], rawResult: String?) {
+            self.transactionHashes = transactionHashes
+            self.rawResult = rawResult
+        }
     }
 
-    func signAndSendTransaction(
+    /// Sign and send a transaction with custom actions.
+    public func signAndSendTransaction(
         receiverId: String,
         actions: [[String: Any]]
     ) async throws -> TransactionResult {
@@ -259,8 +263,8 @@ class NEARWalletManager: ObservableObject {
         }
     }
 
-    /// Send a NEAR transfer
-    func sendNEAR(to receiverId: String, amountYocto: String) async throws -> TransactionResult {
+    /// Send a NEAR transfer.
+    public func sendNEAR(to receiverId: String, amountYocto: String) async throws -> TransactionResult {
         let actions: [[String: Any]] = [
             [
                 "type": "Transfer",
@@ -270,8 +274,8 @@ class NEARWalletManager: ObservableObject {
         return try await signAndSendTransaction(receiverId: receiverId, actions: actions)
     }
 
-    /// Call a smart contract function
-    func callFunction(
+    /// Call a smart contract function.
+    public func callFunction(
         contractId: String,
         methodName: String,
         args: [String: Any] = [:],
@@ -297,13 +301,21 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Sign Message (NEP-413)
 
-    struct MessageSignResult {
-        let accountId: String?
-        let publicKey: String?
-        let signature: String?
+    /// Result of a signed message.
+    public struct MessageSignResult {
+        public let accountId: String?
+        public let publicKey: String?
+        public let signature: String?
+
+        public init(accountId: String?, publicKey: String?, signature: String?) {
+            self.accountId = accountId
+            self.publicKey = publicKey
+            self.signature = signature
+        }
     }
 
-    func signMessage(
+    /// Sign an off-chain message (NEP-413).
+    public func signMessage(
         message: String,
         recipient: String,
         nonce: Data? = nil
@@ -332,7 +344,8 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - NEAR RPC
 
-    func viewAccount(_ accountId: String? = nil) async throws -> [String: Any] {
+    /// Query account info via NEAR RPC.
+    public func viewAccount(_ accountId: String? = nil) async throws -> [String: Any] {
         let id = accountId ?? currentAccount?.accountId
         guard let id else { throw NEARError.notSignedIn }
 
@@ -372,7 +385,8 @@ class NEARWalletManager: ObservableObject {
 
     // MARK: - Utilities
 
-    static func formatNEAR(yoctoNEAR: String) -> String {
+    /// Convert yoctoNEAR string to human-readable NEAR amount.
+    public static func formatNEAR(yoctoNEAR: String) -> String {
         guard let value = Decimal(string: yoctoNEAR) else { return "0" }
         let divisor = Decimal(sign: .plus, exponent: 24, significand: 1)
         let near = value / divisor
@@ -383,7 +397,8 @@ class NEARWalletManager: ObservableObject {
         return formatter.string(from: near as NSDecimalNumber) ?? "0"
     }
 
-    static func toYoctoNEAR(_ near: String) -> String? {
+    /// Convert NEAR amount string to yoctoNEAR string.
+    public static func toYoctoNEAR(_ near: String) -> String? {
         guard let value = Decimal(string: near) else { return nil }
         let multiplier = Decimal(sign: .plus, exponent: 24, significand: 1)
         let yocto = value * multiplier
@@ -419,9 +434,10 @@ class NEARWalletManager: ObservableObject {
     }
 }
 
-// MARK: - WebView Coordinator (owned by NEARWalletManager)
+// MARK: - WebView Coordinator
 
 /// Handles WKWebView delegate callbacks for the persistent bridge WebView.
+@MainActor
 class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     private weak var manager: NEARWalletManager?
     var popupWebViews: [WKWebView] = []
@@ -501,12 +517,10 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
             return
         }
 
-        // For popup WebViews, check if the URL should open externally
         let isPopup = popupWebViews.contains(where: { $0 === webView })
         if isPopup, shouldOpenExternally(url) {
             decisionHandler(.cancel)
             UIApplication.shared.open(url)
-            // Close the blank popup
             webView.removeFromSuperview()
             popupWebViews.removeAll { $0 === webView }
             return
@@ -531,9 +545,7 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
             return nil
         }
 
-        // Use the provided configuration so the JS opener↔popup relationship
-        // is preserved (near-connect executor needs this). Override the data
-        // store to enable cookies (required by Cloudflare-protected wallets).
+        // Override the data store to enable cookies (required by Cloudflare-protected wallets).
         configuration.websiteDataStore = .default()
 
         let popup = WKWebView(frame: webView.bounds, configuration: configuration)
@@ -550,7 +562,6 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         }
         #endif
 
-        // Add as subview of the bridge webview so it's always visible
         if let manager = manager {
             manager.bridgeWebView.addSubview(popup)
         } else {
@@ -593,11 +604,6 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
         print("[NEARConnect] Popup provisional navigation failed: \(error.localizedDescription)")
-        let nsError = error as NSError
-        // If the error is because the URL should be handled by an app, open externally
-        if nsError.code == 102 { // Frame load interrupted
-            return
-        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
@@ -620,39 +626,5 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         completionHandler: @escaping (Bool) -> Void
     ) {
         completionHandler(true)
-    }
-}
-
-// MARK: - Errors
-
-enum NEARError: LocalizedError {
-    case operationInProgress
-    case notSignedIn
-    case invalidURL
-    case invalidTransaction
-    case noTransactionHash
-    case walletError(String)
-    case webViewNotReady
-    case rpcError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .operationInProgress:
-            return "Another wallet operation is in progress"
-        case .notSignedIn:
-            return "Not signed in. Please connect a wallet first."
-        case .invalidURL:
-            return "Failed to build wallet URL"
-        case .invalidTransaction:
-            return "Failed to encode transaction"
-        case .noTransactionHash:
-            return "Wallet did not return a transaction hash"
-        case .walletError(let msg):
-            return msg
-        case .webViewNotReady:
-            return "Wallet bridge is not ready yet"
-        case .rpcError(let msg):
-            return "RPC error: \(msg)"
-        }
     }
 }

@@ -1,11 +1,5 @@
-//
-//  ContentView.swift
-//  near-connect-ios
-//
-//  Main app view - manages wallet connection and demo actions
-//
-
 import SwiftUI
+import NEARConnect
 
 struct ContentView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
@@ -230,65 +224,4 @@ struct ContentView: View {
             // Silently fail
         }
     }
-}
-
-// MARK: - Wallet Bridge Sheet
-
-/// Full-screen cover that shows the persistent bridge WebView.
-/// Used for wallet connection, transaction approval, and message signing.
-struct WalletBridgeSheet: View {
-    @EnvironmentObject var walletManager: NEARWalletManager
-    @Environment(\.dismiss) private var dismiss
-    @State private var didTrigger = false
-
-    var body: some View {
-        NavigationView {
-            ZStack {
-                BridgeWebViewContainer(webView: walletManager.bridgeWebView)
-
-                if !walletManager.isBridgeReady {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Loading wallet connector...")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(uiColor: .systemBackground))
-                }
-            }
-            .navigationTitle("Wallet")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        walletManager.isBusy = false
-                        walletManager.showWalletUI = false
-                    }
-                }
-            }
-            .onChange(of: walletManager.isBridgeReady) {
-                triggerConnectIfNeeded()
-            }
-            .onAppear {
-                triggerConnectIfNeeded()
-            }
-        }
-    }
-
-    private func triggerConnectIfNeeded() {
-        guard walletManager.isBridgeReady,
-              walletManager.pendingConnect,
-              !didTrigger else { return }
-        didTrigger = true
-        walletManager.pendingConnect = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            walletManager.triggerWalletSelector()
-        }
-    }
-}
-
-#Preview {
-    ContentView()
-        .environmentObject(NEARWalletManager())
 }
