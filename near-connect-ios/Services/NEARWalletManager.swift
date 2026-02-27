@@ -108,6 +108,11 @@ class NEARWalletManager: ObservableObject {
         }
     }
 
+    /// Remove all popup webviews (wallet pages opened via window.open)
+    func closePopups() {
+        coordinator.closeAllPopups()
+    }
+
     // MARK: - Handle events from WebView
 
     func handleEvent(_ event: NEARConnectEvent) {
@@ -127,6 +132,7 @@ class NEARWalletManager: ObservableObject {
             signInContinuation?.resume(returning: account)
             signInContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .signedOut:
@@ -142,6 +148,7 @@ class NEARWalletManager: ObservableObject {
             transactionContinuation?.resume(returning: result)
             transactionContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .transactionsResult(let rawResults):
@@ -152,12 +159,14 @@ class NEARWalletManager: ObservableObject {
             transactionContinuation?.resume(returning: result)
             transactionContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .transactionError(let message):
             transactionContinuation?.resume(throwing: NEARError.walletError(message))
             transactionContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .messageResult(let accountId, let publicKey, let signature):
@@ -169,12 +178,14 @@ class NEARWalletManager: ObservableObject {
             messageContinuation?.resume(returning: result)
             messageContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .messageError(let message):
             messageContinuation?.resume(throwing: NEARError.walletError(message))
             messageContinuation = nil
             isBusy = false
+            closePopups()
             showWalletUI = false
 
         case .error(let message):
@@ -419,6 +430,13 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         self.manager = manager
     }
 
+    func closeAllPopups() {
+        for popup in popupWebViews {
+            popup.removeFromSuperview()
+        }
+        popupWebViews.removeAll()
+    }
+
     // MARK: - WKScriptMessageHandler
 
     nonisolated func userContentController(
@@ -505,21 +523,26 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard let url = navigationAction.request.url else { return nil }
+        let url = navigationAction.request.url
+        print("[NEARConnect] window.open() URL: \(url?.absoluteString ?? "nil")")
 
-        // Non-HTTP URLs (custom schemes, etc.) should open externally
-        if shouldOpenExternally(url) {
+        if let url, shouldOpenExternally(url) {
             UIApplication.shared.open(url)
             return nil
         }
 
-        // Create an in-app popup for web wallet pages
+        // Use the provided configuration so the JS opener↔popup relationship
+        // is preserved (near-connect executor needs this). Override the data
+        // store to enable cookies (required by Cloudflare-protected wallets).
+        configuration.websiteDataStore = .default()
+
         let popup = WKWebView(frame: webView.bounds, configuration: configuration)
         popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         popup.navigationDelegate = self
         popup.uiDelegate = self
         popup.backgroundColor = .systemBackground
         popup.isOpaque = true
+        popup.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
 
         #if DEBUG
         if #available(iOS 16.4, *) {
@@ -527,7 +550,12 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         }
         #endif
 
-        webView.addSubview(popup)
+        // Add as subview of the bridge webview so it's always visible
+        if let manager = manager {
+            manager.bridgeWebView.addSubview(popup)
+        } else {
+            webView.addSubview(popup)
+        }
         popupWebViews.append(popup)
         return popup
     }
@@ -537,7 +565,13 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
     private func shouldOpenExternally(_ url: URL) -> Bool {
         let scheme = url.scheme?.lowercased() ?? ""
 
-        // Non-HTTP schemes always open externally (custom deep links)
+        // about:blank / about:srcdoc are used internally by near-connect
+        // for popup initialization — must stay in-app
+        if scheme == "about" {
+            return false
+        }
+
+        // Non-HTTP schemes open externally (custom deep links like near://, tg://)
         if scheme != "http" && scheme != "https" {
             return true
         }
@@ -555,6 +589,19 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
     func webViewDidClose(_ webView: WKWebView) {
         webView.removeFromSuperview()
         popupWebViews.removeAll { $0 === webView }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        print("[NEARConnect] Popup provisional navigation failed: \(error.localizedDescription)")
+        let nsError = error as NSError
+        // If the error is because the URL should be handled by an app, open externally
+        if nsError.code == 102 { // Frame load interrupted
+            return
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        print("[NEARConnect] Popup navigation failed: \(error.localizedDescription)")
     }
 
     func webView(
