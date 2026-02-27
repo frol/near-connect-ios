@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct near_connect_iosApp: App {
+    @StateObject private var walletManager = NEARWalletManager()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(walletManager)
         }
     }
 }

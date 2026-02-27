@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEAR Connect</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: transparent;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <script type="module">
+        import { NearConnector } from "https://cdn.jsdelivr.net/npm/@hot-labs/near-connect@0.10.0/+esm";
+
+        function postToSwift(type, data) {
+            try {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nearConnect) {
+                    window.webkit.messageHandlers.nearConnect.postMessage({ type, ...data });
+                }
+            } catch (e) {
+                console.error("postToSwift error:", e);
+            }
+        }
+
+        let connector = null;
+
+        async function init(network) {
+            try {
+                connector = new NearConnector({
+                    network: network || "mainnet",
+                });
+
+                connector.on("wallet:signIn", (event) => {
+                    const account = event.accounts && event.accounts[0];
+                    if (account) {
+                        postToSwift("signIn", {
+                            accountId: account.accountId,
+                            publicKey: account.publicKey || null,
+                            walletId: event.source || "unknown",
+                        });
+                    }
+                });
+
+                connector.on("wallet:signInAndSignMessage", (event) => {
+                    const account = event.accounts && event.accounts[0];
+                    if (account) {
+                        postToSwift("signInAndSignMessage", {
+                            accountId: account.accountId,
+                            publicKey: account.publicKey || null,
+                            walletId: event.source || "unknown",
+                            signedMessage: account.signedMessage || null,
+                        });
+                    }
+                });
+
+                connector.on("wallet:signOut", () => {
+                    postToSwift("signOut", {});
+                });
+
+                postToSwift("ready", {});
+            } catch (err) {
+                postToSwift("error", { message: "Init failed: " + err.message });
+            }
+        }
+
+        window.nearConnect = async function() {
+            if (!connector) {
+                postToSwift("error", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                await connector.connect();
+            } catch (err) {
+                postToSwift("error", { message: err.message });
+            }
+        };
+
+        window.nearConnectWallet = async function(walletId) {
+            if (!connector) {
+                postToSwift("error", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                await connector.connect({ walletId: walletId });
+            } catch (err) {
+                postToSwift("error", { message: err.message });
+            }
+        };
+
+        window.nearDisconnect = async function() {
+            if (!connector) return;
+            try {
+                await connector.disconnect();
+                postToSwift("signOut", {});
+            } catch (err) {
+                postToSwift("error", { message: err.message });
+            }
+        };
+
+        window.nearSignAndSendTransaction = async function(receiverId, actionsJson) {
+            if (!connector) {
+                postToSwift("transactionError", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                const wallet = await connector.wallet();
+                if (!wallet) {
+                    postToSwift("transactionError", { message: "No wallet connected" });
+                    return;
+                }
+                const actions = JSON.parse(actionsJson);
+                const result = await wallet.signAndSendTransaction({
+                    receiverId: receiverId,
+                    actions: actions,
+                });
+                const hash = result && result.transaction_outcome
+                    ? result.transaction_outcome.id
+                    : (result && result.transaction ? result.transaction.hash : null);
+                postToSwift("transactionResult", {
+                    transactionHash: hash || "unknown",
+                    result: JSON.stringify(result),
+                });
+            } catch (err) {
+                postToSwift("transactionError", { message: err.message });
+            }
+        };
+
+        window.nearSignAndSendTransactions = async function(transactionsJson) {
+            if (!connector) {
+                postToSwift("transactionError", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                const wallet = await connector.wallet();
+                if (!wallet) {
+                    postToSwift("transactionError", { message: "No wallet connected" });
+                    return;
+                }
+                const transactions = JSON.parse(transactionsJson);
+                const results = await wallet.signAndSendTransactions({ transactions });
+                postToSwift("transactionsResult", { results: JSON.stringify(results) });
+            } catch (err) {
+                postToSwift("transactionError", { message: err.message });
+            }
+        };
+
+        window.nearSignMessage = async function(message, recipient, nonceBase64) {
+            if (!connector) {
+                postToSwift("messageError", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                const wallet = await connector.wallet();
+                if (!wallet) {
+                    postToSwift("messageError", { message: "No wallet connected" });
+                    return;
+                }
+                const nonceArray = Uint8Array.from(atob(nonceBase64), c => c.charCodeAt(0));
+                const result = await wallet.signMessage({
+                    message: message,
+                    recipient: recipient,
+                    nonce: nonceArray,
+                });
+                postToSwift("messageResult", {
+                    accountId: result.accountId,
+                    publicKey: result.publicKey,
+                    signature: result.signature,
+                });
+            } catch (err) {
+                postToSwift("messageError", { message: err.message });
+            }
+        };
+
+        // Capture unhandled errors and forward to Swift for debugging
+        window.onerror = function(msg, src, line, col, err) {
+            postToSwift("error", { message: "JS: " + msg + " (line " + line + ")" });
+        };
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const network = urlParams.get("network") || "mainnet";
+        init(network);
+    </script>
+</body>
+</html>
