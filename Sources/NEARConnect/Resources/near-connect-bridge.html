@@ -170,6 +170,27 @@
             }
         };
 
+        window.nearSignDelegateActions = async function(delegateActionsJson) {
+            if (!connector) {
+                postToSwift("delegateActionError", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                const wallet = await connector.wallet();
+                if (!wallet) {
+                    postToSwift("delegateActionError", { message: "No wallet connected" });
+                    return;
+                }
+                const delegateActions = JSON.parse(delegateActionsJson);
+                const result = await wallet.signDelegateActions({ delegateActions });
+                postToSwift("delegateActionResult", {
+                    result: JSON.stringify(result),
+                });
+            } catch (err) {
+                postToSwift("delegateActionError", { message: err.message });
+            }
+        };
+
         window.nearSignMessage = async function(message, recipient, nonceBase64) {
             if (!connector) {
                 postToSwift("messageError", { message: "Connector not initialized" });

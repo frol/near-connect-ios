@@ -50,6 +50,7 @@ public class NEARWalletManager: ObservableObject {
     private var signInAndSignMessageContinuation: CheckedContinuation<SignInWithMessageResult, any Error>?
     private var transactionContinuation: CheckedContinuation<TransactionResult, any Error>?
     private var messageContinuation: CheckedContinuation<MessageSignResult, any Error>?
+    private var delegateActionContinuation: CheckedContinuation<DelegateActionResult, any Error>?
 
     // MARK: - Persistence
 
@@ -141,6 +142,10 @@ public class NEARWalletManager: ObservableObject {
         if messageContinuation != nil {
             messageContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
             messageContinuation = nil
+        }
+        if delegateActionContinuation != nil {
+            delegateActionContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
+            delegateActionContinuation = nil
         }
         isBusy = false
     }
@@ -255,6 +260,21 @@ public class NEARWalletManager: ObservableObject {
             closePopups()
             showWalletUI = false
 
+        case .delegateActionResult(let rawResult):
+            let result = DelegateActionResult(rawResult: rawResult)
+            delegateActionContinuation?.resume(returning: result)
+            delegateActionContinuation = nil
+            isBusy = false
+            closePopups()
+            showWalletUI = false
+
+        case .delegateActionError(let message):
+            delegateActionContinuation?.resume(throwing: NEARError.walletError(message))
+            delegateActionContinuation = nil
+            isBusy = false
+            closePopups()
+            showWalletUI = false
+
         case .error(let message):
             lastError = message
             signInContinuation?.resume(throwing: NEARError.walletError(message))
@@ -265,6 +285,8 @@ public class NEARWalletManager: ObservableObject {
             transactionContinuation = nil
             messageContinuation?.resume(throwing: NEARError.walletError(message))
             messageContinuation = nil
+            delegateActionContinuation?.resume(throwing: NEARError.walletError(message))
+            delegateActionContinuation = nil
             isBusy = false
         }
     }
@@ -467,6 +489,50 @@ public class NEARWalletManager: ObservableObject {
         }
     }
 
+    // MARK: - Sign Delegate Actions (NEP-366 Meta Transactions)
+
+    /// Result of signed delegate actions.
+    public struct DelegateActionResult {
+        /// Raw JSON result from the wallet containing the signed delegate actions.
+        public let rawResult: String?
+
+        public init(rawResult: String?) {
+            self.rawResult = rawResult
+        }
+    }
+
+    /// Sign delegate actions for meta transactions (NEP-366).
+    ///
+    /// The wallet signs the actions without broadcasting them. A relayer service
+    /// is responsible for submitting the signed delegate actions to the network.
+    /// Each delegate action specifies a `receiverId` and a list of `actions`.
+    ///
+    /// - Parameter delegateActions: Array of delegate action dictionaries, each
+    ///   containing `"receiverId"` (String) and `"actions"` (array of action objects).
+    /// - Returns: A `DelegateActionResult` with the raw signed payload from the wallet.
+    public func signDelegateActions(
+        delegateActions: [[String: Any]]
+    ) async throws -> DelegateActionResult {
+        guard isSignedIn else { throw NEARError.notSignedIn }
+        guard !isBusy else { throw NEARError.operationInProgress }
+        guard isBridgeReady else { throw NEARError.webViewNotReady }
+
+        isBusy = true
+        lastError = nil
+        showWalletUI = true
+
+        let data = try JSONSerialization.data(withJSONObject: delegateActions)
+        let json = String(data: data, encoding: .utf8) ?? "[]"
+
+        return try await withCheckedThrowingContinuation { continuation in
+            delegateActionContinuation = continuation
+            let escaped = json.replacingOccurrences(of: "'", with: "\\'")
+            bridgeWebView.callNEARConnect(
+                "window.nearSignDelegateActions('\(escaped)')"
+            )
+        }
+    }
+
     // MARK: - NEAR RPC
 
     /// Query account info via NEAR RPC.
@@ -627,6 +693,10 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
                 )
             case "messageError":
                 event = .messageError(body["message"] as? String ?? "Unknown error")
+            case "delegateActionResult":
+                event = .delegateActionResult(rawResult: body["result"] as? String)
+            case "delegateActionError":
+                event = .delegateActionError(body["message"] as? String ?? "Unknown error")
             case "error":
                 event = .error(body["message"] as? String ?? "Unknown error")
             default:

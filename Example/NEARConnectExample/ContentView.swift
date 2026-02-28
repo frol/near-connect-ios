@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showTransactionDemo = false
     @State private var showContractCallDemo = false
     @State private var showConnectAndSignDemo = false
+    @State private var showDelegateActionDemo = false
     @State private var accountBalance: String?
     @State private var showError = false
     @State private var errorMessage = ""
@@ -52,6 +53,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showConnectAndSignDemo) {
                 SignInAndSignMessageDemoView()
+                    .environmentObject(walletManager)
+            }
+            .sheet(isPresented: $showDelegateActionDemo) {
+                DelegateActionDemoView()
                     .environmentObject(walletManager)
             }
             .alert("Error", isPresented: $showError) {
@@ -148,6 +153,16 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.purple)
+                        .cornerRadius(12)
+                }
+
+                Button(action: { showDelegateActionDemo = true }) {
+                    Label("Delegate Actions", systemImage: "arrow.triangle.branch")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.teal)
                         .cornerRadius(12)
                 }
             }
