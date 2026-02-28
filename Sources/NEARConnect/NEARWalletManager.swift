@@ -112,6 +112,39 @@ public class NEARWalletManager: ObservableObject {
         coordinator.closeAllPopups()
     }
 
+    /// Clean up all wallet UI state when the sheet is dismissed.
+    ///
+    /// Removes near-connect DOM overlays, closes popup WKWebViews,
+    /// and cancels any in-flight continuations so the flow can be retried.
+    public func cleanUpOnDismiss() {
+        // Remove near-connect wallet selector overlays from the DOM
+        bridgeWebView.callNEARConnect(
+            "document.querySelectorAll('.hot-connector-popup').forEach(function(el) { el.remove(); })"
+        )
+        // Remove popup WKWebViews (wallet pages opened via window.open)
+        closePopups()
+        // Cancel any pending async operations
+        pendingConnect = false
+        pendingSignMessageParams = nil
+        if signInContinuation != nil {
+            signInContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
+            signInContinuation = nil
+        }
+        if signInAndSignMessageContinuation != nil {
+            signInAndSignMessageContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
+            signInAndSignMessageContinuation = nil
+        }
+        if transactionContinuation != nil {
+            transactionContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
+            transactionContinuation = nil
+        }
+        if messageContinuation != nil {
+            messageContinuation?.resume(throwing: NEARError.walletError("Cancelled"))
+            messageContinuation = nil
+        }
+        isBusy = false
+    }
+
     // MARK: - Handle events from WebView
 
     func handleEvent(_ event: NEARConnectEvent) {

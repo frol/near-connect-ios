@@ -6,44 +6,55 @@ import SwiftUI
 /// It handles wallet connection, transaction approval, and message signing flows.
 public struct WalletBridgeSheet: View {
     @EnvironmentObject var walletManager: NEARWalletManager
-    @Environment(\.dismiss) private var dismiss
     @State private var didTrigger = false
 
     public init() {}
 
     public var body: some View {
-        NavigationView {
-            ZStack {
-                BridgeWebViewContainer(webView: walletManager.bridgeWebView)
+        ZStack {
+            BridgeWebViewContainer(webView: walletManager.bridgeWebView)
+                .ignoresSafeArea()
 
-                if !walletManager.isBridgeReady {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Loading wallet connector...")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(uiColor: .systemBackground))
+            if !walletManager.isBridgeReady {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading wallet connector...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(uiColor: .systemBackground))
+                .ignoresSafeArea()
             }
-            .navigationTitle("Wallet")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        walletManager.isBusy = false
-                        walletManager.showWalletUI = false
+
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: cancelFlow) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .gray.opacity(0.6))
                     }
+                    .padding(.top, 8)
+                    .padding(.trailing, 16)
                 }
-            }
-            .onChange(of: walletManager.isBridgeReady) { _ in
-                triggerConnectIfNeeded()
-            }
-            .onAppear {
-                triggerConnectIfNeeded()
+                Spacer()
             }
         }
+        .onChange(of: walletManager.isBridgeReady) { _ in
+            triggerConnectIfNeeded()
+        }
+        .onAppear {
+            triggerConnectIfNeeded()
+        }
+        .onDisappear {
+            walletManager.cleanUpOnDismiss()
+        }
+    }
+
+    private func cancelFlow() {
+        walletManager.showWalletUI = false
     }
 
     private func triggerConnectIfNeeded() {

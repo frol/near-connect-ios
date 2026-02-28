@@ -15,8 +15,10 @@ public struct BridgeWebViewContainer: UIViewRepresentable {
     public func makeUIView(context: Context) -> UIView {
         let container = UIView()
         container.backgroundColor = .systemBackground
+        container.insetsLayoutMarginsFromSafeArea = false
         webView.frame = container.bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         container.addSubview(webView)
         return container
     }
