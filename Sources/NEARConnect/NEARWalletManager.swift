@@ -668,11 +668,24 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
                     walletId: body["walletId"] as? String ?? "unknown"
                 )
             case "signInAndSignMessage":
+                // signedMessage may arrive as a dictionary from JS; serialize it to JSON string
+                let signedMessage: String?
+                let smDict = body["signedMessage"] as? [String: Any]
+                if let smString = body["signedMessage"] as? String {
+                    signedMessage = smString
+                } else if let smDict,
+                          let data = try? JSONSerialization.data(withJSONObject: smDict, options: .prettyPrinted) {
+                    signedMessage = String(data: data, encoding: .utf8)
+                } else {
+                    signedMessage = nil
+                }
+                // Fall back to publicKey from signedMessage dict if top-level is null
+                let publicKey = (body["publicKey"] as? String) ?? (smDict?["publicKey"] as? String)
                 event = .signedInAndSignedMessage(
                     accountId: body["accountId"] as? String ?? "",
-                    publicKey: body["publicKey"] as? String,
+                    publicKey: publicKey,
                     walletId: body["walletId"] as? String ?? "unknown",
-                    signedMessage: body["signedMessage"] as? String
+                    signedMessage: signedMessage
                 )
             case "signOut":
                 event = .signedOut
@@ -686,10 +699,21 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
             case "transactionError":
                 event = .transactionError(body["message"] as? String ?? "Unknown error")
             case "messageResult":
+                // signedMessage may arrive as a dictionary from JS; serialize it to JSON string
+                let msgSignature: String?
+                if let sigString = body["signedMessage"] as? String {
+                    msgSignature = sigString
+                } else if let sigDict = body["signedMessage"],
+                          !(sigDict is NSNull),
+                          let data = try? JSONSerialization.data(withJSONObject: sigDict, options: .prettyPrinted) {
+                    msgSignature = String(data: data, encoding: .utf8)
+                } else {
+                    msgSignature = nil
+                }
                 event = .messageResult(
                     accountId: body["accountId"] as? String,
                     publicKey: body["publicKey"] as? String,
-                    signature: body["signature"] as? String
+                    signature: msgSignature
                 )
             case "messageError":
                 event = .messageError(body["message"] as? String ?? "Unknown error")

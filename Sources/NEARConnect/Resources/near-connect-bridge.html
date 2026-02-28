@@ -29,6 +29,13 @@
             }
         }
 
+        // BigInt-safe JSON serializer (NEAR uses BigInt for gas, deposits, block heights, etc.)
+        function safeStringify(obj) {
+            return JSON.stringify(obj, (key, value) =>
+                typeof value === "bigint" ? value.toString() : value
+            );
+        }
+
         let connector = null;
 
         async function init(network) {
@@ -144,7 +151,7 @@
                     : (result && result.transaction ? result.transaction.hash : null);
                 postToSwift("transactionResult", {
                     transactionHash: hash || "unknown",
-                    result: JSON.stringify(result),
+                    result: safeStringify(result),
                 });
             } catch (err) {
                 postToSwift("transactionError", { message: err.message });
@@ -164,7 +171,7 @@
                 }
                 const transactions = JSON.parse(transactionsJson);
                 const results = await wallet.signAndSendTransactions({ transactions });
-                postToSwift("transactionsResult", { results: JSON.stringify(results) });
+                postToSwift("transactionsResult", { results: safeStringify(results) });
             } catch (err) {
                 postToSwift("transactionError", { message: err.message });
             }
@@ -184,7 +191,7 @@
                 const delegateActions = JSON.parse(delegateActionsJson);
                 const result = await wallet.signDelegateActions({ delegateActions });
                 postToSwift("delegateActionResult", {
-                    result: JSON.stringify(result),
+                    result: safeStringify(result),
                 });
             } catch (err) {
                 postToSwift("delegateActionError", { message: err.message });
@@ -211,7 +218,7 @@
                 postToSwift("messageResult", {
                     accountId: result.accountId,
                     publicKey: result.publicKey,
-                    signature: result.signature,
+                    signedMessage: result.signedMessage,
                 });
             } catch (err) {
                 postToSwift("messageError", { message: err.message });
