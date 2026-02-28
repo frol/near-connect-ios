@@ -26,6 +26,10 @@ public class NEARWalletManager: ObservableObject {
     /// When true, the wallet selector should be auto-triggered on sheet appear.
     public var pendingConnect = false
 
+    /// Parameters for a pending connect-and-sign-message flow.
+    /// Set by `connectAndSignMessage()`, consumed by `WalletBridgeSheet`.
+    public var pendingSignMessageParams: (message: String, recipient: String, nonce: Data)?
+
     /// Network for wallet connections.
     public enum Network: String, Sendable {
         case mainnet
@@ -43,6 +47,7 @@ public class NEARWalletManager: ObservableObject {
     // MARK: - Continuations for async operations
 
     private var signInContinuation: CheckedContinuation<NEARAccount, any Error>?
+    private var signInAndSignMessageContinuation: CheckedContinuation<SignInWithMessageResult, any Error>?
     private var transactionContinuation: CheckedContinuation<TransactionResult, any Error>?
     private var messageContinuation: CheckedContinuation<MessageSignResult, any Error>?
 
@@ -125,6 +130,41 @@ public class NEARWalletManager: ObservableObject {
             saveAccount(account)
             signInContinuation?.resume(returning: account)
             signInContinuation = nil
+            // If a signInAndSignMessage continuation is waiting but we got
+            // a plain signIn event, still complete it (wallet may not support
+            // signInAndSignMessage and fall back to signIn).
+            if let cont = signInAndSignMessageContinuation {
+                let result = SignInWithMessageResult(
+                    account: account,
+                    signedMessage: nil
+                )
+                cont.resume(returning: result)
+                signInAndSignMessageContinuation = nil
+            }
+            isBusy = false
+            closePopups()
+            showWalletUI = false
+
+        case .signedInAndSignedMessage(let accountId, let publicKey, let walletId, let signedMessage):
+            let account = NEARAccount(
+                accountId: accountId,
+                publicKey: publicKey,
+                walletId: walletId
+            )
+            currentAccount = account
+            saveAccount(account)
+            if let cont = signInAndSignMessageContinuation {
+                let result = SignInWithMessageResult(
+                    account: account,
+                    signedMessage: signedMessage
+                )
+                cont.resume(returning: result)
+                signInAndSignMessageContinuation = nil
+            } else {
+                // Fallback: if initiated via plain connect(), just resume signIn
+                signInContinuation?.resume(returning: account)
+                signInContinuation = nil
+            }
             isBusy = false
             closePopups()
             showWalletUI = false
@@ -186,6 +226,8 @@ public class NEARWalletManager: ObservableObject {
             lastError = message
             signInContinuation?.resume(throwing: NEARError.walletError(message))
             signInContinuation = nil
+            signInAndSignMessageContinuation?.resume(throwing: NEARError.walletError(message))
+            signInAndSignMessageContinuation = nil
             transactionContinuation?.resume(throwing: NEARError.walletError(message))
             transactionContinuation = nil
             messageContinuation?.resume(throwing: NEARError.walletError(message))
@@ -212,6 +254,56 @@ public class NEARWalletManager: ObservableObject {
         showWalletUI = true
         let escaped = walletId.replacingOccurrences(of: "'", with: "\\'")
         bridgeWebView.callNEARConnect("window.nearConnectWallet('\(escaped)')")
+    }
+
+    // MARK: - Connect & Sign Message
+
+    /// Result of connecting a wallet with a signed message.
+    public struct SignInWithMessageResult {
+        public let account: NEARAccount
+        /// The signed message payload returned by the wallet, or nil if the
+        /// wallet does not support signInAndSignMessage.
+        public let signedMessage: String?
+
+        public init(account: NEARAccount, signedMessage: String?) {
+            self.account = account
+            self.signedMessage = signedMessage
+        }
+    }
+
+    /// Connect a wallet and request a message signature in a single step.
+    ///
+    /// This combines wallet connection with NEP-413 message signing. The wallet
+    /// presents a single approval screen for both sign-in and message signing.
+    public func connectAndSignMessage(
+        message: String,
+        recipient: String,
+        nonce: Data? = nil
+    ) async throws -> SignInWithMessageResult {
+        guard !isBusy else { throw NEARError.operationInProgress }
+        guard isBridgeReady else { throw NEARError.webViewNotReady }
+
+        let messageNonce = nonce ?? generateNonce()
+        pendingSignMessageParams = (message: message, recipient: recipient, nonce: messageNonce)
+        showWalletUI = true
+        isBusy = true
+        lastError = nil
+
+        return try await withCheckedThrowingContinuation { continuation in
+            signInAndSignMessageContinuation = continuation
+        }
+    }
+
+    /// Trigger the JS connect flow with sign message parameters.
+    /// Called by `WalletBridgeSheet` when the bridge is ready.
+    public func triggerConnectWithSignMessage(message: String, recipient: String, nonce: Data) {
+        let nonceBase64 = nonce.base64EncodedString()
+        let escapedMsg = message.replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        let escapedRecipient = recipient.replacingOccurrences(of: "'", with: "\\'")
+        bridgeWebView.callNEARConnect(
+            "window.nearConnectWithSignMessage('\(escapedMsg)', '\(escapedRecipient)', '\(nonceBase64)')"
+        )
     }
 
     // MARK: - Disconnect
@@ -470,11 +562,18 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
             switch type {
             case "ready":
                 event = .ready
-            case "signIn", "signInAndSignMessage":
+            case "signIn":
                 event = .signedIn(
                     accountId: body["accountId"] as? String ?? "",
                     publicKey: body["publicKey"] as? String,
                     walletId: body["walletId"] as? String ?? "unknown"
+                )
+            case "signInAndSignMessage":
+                event = .signedInAndSignedMessage(
+                    accountId: body["accountId"] as? String ?? "",
+                    publicKey: body["publicKey"] as? String,
+                    walletId: body["walletId"] as? String ?? "unknown",
+                    signedMessage: body["signedMessage"] as? String
                 )
             case "signOut":
                 event = .signedOut

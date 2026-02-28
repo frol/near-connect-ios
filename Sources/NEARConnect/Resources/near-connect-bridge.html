@@ -94,6 +94,25 @@
             }
         };
 
+        window.nearConnectWithSignMessage = async function(message, recipient, nonceBase64) {
+            if (!connector) {
+                postToSwift("error", { message: "Connector not initialized" });
+                return;
+            }
+            try {
+                const nonceArray = Uint8Array.from(atob(nonceBase64), c => c.charCodeAt(0));
+                await connector.connect({
+                    signMessageParams: {
+                        message: message,
+                        recipient: recipient,
+                        nonce: nonceArray,
+                    }
+                });
+            } catch (err) {
+                postToSwift("error", { message: err.message });
+            }
+        };
+
         window.nearDisconnect = async function() {
             if (!connector) return;
             try {

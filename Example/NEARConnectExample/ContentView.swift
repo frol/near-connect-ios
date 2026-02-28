@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @State private var showTransactionDemo = false
     @State private var showContractCallDemo = false
+    @State private var showConnectAndSignDemo = false
     @State private var accountBalance: String?
     @State private var showError = false
     @State private var errorMessage = ""
@@ -47,6 +48,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showContractCallDemo) {
                 MessageSigningDemoView()
+                    .environmentObject(walletManager)
+            }
+            .sheet(isPresented: $showConnectAndSignDemo) {
+                SignInAndSignMessageDemoView()
                     .environmentObject(walletManager)
             }
             .alert("Error", isPresented: $showError) {
@@ -192,6 +197,16 @@ struct ContentView: View {
                     .cornerRadius(12)
             }
             .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+
+            Button(action: { showConnectAndSignDemo = true }) {
+                Label("Connect & Sign Message", systemImage: "signature")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+            }
         }
         .padding()
     }

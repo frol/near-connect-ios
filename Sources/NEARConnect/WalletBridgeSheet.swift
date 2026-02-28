@@ -47,13 +47,24 @@ public struct WalletBridgeSheet: View {
     }
 
     private func triggerConnectIfNeeded() {
-        guard walletManager.isBridgeReady,
-              walletManager.pendingConnect,
-              !didTrigger else { return }
-        didTrigger = true
-        walletManager.pendingConnect = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            walletManager.triggerWalletSelector()
+        guard walletManager.isBridgeReady, !didTrigger else { return }
+
+        if let params = walletManager.pendingSignMessageParams {
+            didTrigger = true
+            walletManager.pendingSignMessageParams = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                walletManager.triggerConnectWithSignMessage(
+                    message: params.message,
+                    recipient: params.recipient,
+                    nonce: params.nonce
+                )
+            }
+        } else if walletManager.pendingConnect {
+            didTrigger = true
+            walletManager.pendingConnect = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                walletManager.triggerWalletSelector()
+            }
         }
     }
 }

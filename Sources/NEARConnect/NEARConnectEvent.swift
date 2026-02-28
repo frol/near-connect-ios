@@ -4,6 +4,7 @@ import WebKit
 enum NEARConnectEvent {
     case ready
     case signedIn(accountId: String, publicKey: String?, walletId: String)
+    case signedInAndSignedMessage(accountId: String, publicKey: String?, walletId: String, signedMessage: String?)
     case signedOut
     case transactionResult(hash: String, rawResult: String?)
     case transactionsResult(rawResults: String?)
