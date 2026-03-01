@@ -11,7 +11,7 @@ enum NEARConnectEvent {
     case transactionError(String)
     case messageResult(accountId: String?, publicKey: String?, signature: String?)
     case messageError(String)
-    case delegateActionResult(rawResult: String?)
+    case delegateActionResult(signedDelegateActions: [String])
     case delegateActionError(String)
     case error(String)
 }

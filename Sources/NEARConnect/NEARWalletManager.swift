@@ -74,6 +74,29 @@ public class NEARWalletManager: ObservableObject {
 
         let contentController = WKUserContentController()
         contentController.add(coordinator, name: "nearConnect")
+        contentController.add(coordinator, name: "nearConnectLog")
+
+        // Override console.log/warn/error to forward messages to Swift
+        let consoleOverride = WKUserScript(source: """
+            (function() {
+                function forward(level) {
+                    var orig = console[level];
+                    console[level] = function() {
+                        var msg = Array.prototype.slice.call(arguments).map(function(a) {
+                            if (typeof a === 'object') { try { return JSON.stringify(a, function(k,v) { return typeof v === 'bigint' ? v.toString() + 'n' : v; }); } catch(e) { return String(a); } }
+                            return String(a);
+                        }).join(' ');
+                        try { window.webkit.messageHandlers.nearConnectLog.postMessage({ level: level, message: msg }); } catch(e) {}
+                        orig.apply(console, arguments);
+                    };
+                }
+                forward('log');
+                forward('warn');
+                forward('error');
+            })();
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        contentController.addUserScript(consoleOverride)
+
         config.userContentController = contentController
 
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 800), configuration: config)
@@ -260,8 +283,8 @@ public class NEARWalletManager: ObservableObject {
             closePopups()
             showWalletUI = false
 
-        case .delegateActionResult(let rawResult):
-            let result = DelegateActionResult(rawResult: rawResult)
+        case .delegateActionResult(let signedDelegateActions):
+            let result = DelegateActionResult(signedDelegateActions: signedDelegateActions)
             delegateActionContinuation?.resume(returning: result)
             delegateActionContinuation = nil
             isBusy = false
@@ -493,11 +516,12 @@ public class NEARWalletManager: ObservableObject {
 
     /// Result of signed delegate actions.
     public struct DelegateActionResult {
-        /// Raw JSON result from the wallet containing the signed delegate actions.
-        public let rawResult: String?
+        /// Array of base64-encoded Borsh-serialized SignedDelegateAction objects,
+        /// ready to be sent to a relayer for on-chain submission.
+        public let signedDelegateActions: [String]
 
-        public init(rawResult: String?) {
-            self.rawResult = rawResult
+        public init(signedDelegateActions: [String]) {
+            self.signedDelegateActions = signedDelegateActions
         }
     }
 
@@ -651,6 +675,15 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         didReceive message: WKScriptMessage
     ) {
         MainActor.assumeIsolated {
+            // Forward JS console messages to Swift print
+            if message.name == "nearConnectLog",
+               let body = message.body as? [String: Any],
+               let level = body["level"] as? String,
+               let msg = body["message"] as? String {
+                print("[NEARConnect JS \(level)] \(msg)")
+                return
+            }
+
             guard message.name == "nearConnect",
                   let body = message.body as? [String: Any],
                   let type = body["type"] as? String else {
@@ -718,7 +751,8 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
             case "messageError":
                 event = .messageError(body["message"] as? String ?? "Unknown error")
             case "delegateActionResult":
-                event = .delegateActionResult(rawResult: body["result"] as? String)
+                let actions = body["signedDelegateActions"] as? [String] ?? []
+                event = .delegateActionResult(signedDelegateActions: actions)
             case "delegateActionError":
                 event = .delegateActionError(body["message"] as? String ?? "Unknown error")
             case "error":

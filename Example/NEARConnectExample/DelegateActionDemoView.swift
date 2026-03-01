@@ -123,7 +123,8 @@ struct DelegateActionDemoView: View {
                 let delegateResult = try await walletManager.signDelegateActions(
                     delegateActions: delegateActions
                 )
-                let output = delegateResult.rawResult ?? "(no raw result returned)"
+                let actions = delegateResult.signedDelegateActions
+                let output = "\(actions.count) signed delegate action(s):\n" + actions.enumerated().map { "[\($0.offset)] \($0.element)" }.joined(separator: "\n")
                 onLog?("signDelegateActions", params, output, false)
             } catch {
                 onLog?("signDelegateActions", params, error.localizedDescription, true)
