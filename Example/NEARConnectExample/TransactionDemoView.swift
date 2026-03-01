@@ -4,11 +4,11 @@ import NEARConnect
 struct TransactionDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @Environment(\.dismiss) private var dismiss
+    var onLog: ((_ action: String, _ params: String, _ output: String, _ isError: Bool) -> Void)?
 
     @State private var receiverId = ""
     @State private var amount = "0.01"
     @State private var isProcessing = false
-    @State private var result: String?
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -57,15 +57,6 @@ struct TransactionDemoView: View {
                     .disabled(isProcessing || receiverId.isEmpty || amount.isEmpty)
                 }
 
-                if let result {
-                    Section(header: Text("Result")) {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .textSelection(.enabled)
-                    }
-                }
-
                 Section {
                     Text("The wallet will open to confirm the transaction. The transaction is signed and broadcast by the wallet.")
                         .font(.caption)
@@ -95,6 +86,7 @@ struct TransactionDemoView: View {
             return
         }
 
+        let params = "to: \(receiverId), amount: \(amount) NEAR"
         Task {
             isProcessing = true
             defer { isProcessing = false }
@@ -104,8 +96,10 @@ struct TransactionDemoView: View {
                     to: receiverId,
                     amountYocto: yocto
                 )
-                result = "Transaction sent!\n\nHash: \(txResult.transactionHashes.joined(separator: "\n"))"
+                let hashes = txResult.transactionHashes.joined(separator: ", ")
+                onLog?("sendNEAR", params, "Hashes: \(hashes)", false)
             } catch {
+                onLog?("sendNEAR", params, error.localizedDescription, true)
                 errorMessage = error.localizedDescription
                 showError = true
             }

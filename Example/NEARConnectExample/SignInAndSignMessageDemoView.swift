@@ -4,20 +4,13 @@ import NEARConnect
 struct SignInAndSignMessageDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @Environment(\.dismiss) private var dismiss
+    var onLog: ((_ action: String, _ params: String, _ output: String, _ isError: Bool) -> Void)?
 
     @State private var message = "Sign in to NEAR Connect Demo"
     @State private var recipient = "near-connect-demo.near"
     @State private var isProcessing = false
-    @State private var result: SignInResult?
     @State private var showError = false
     @State private var errorMessage = ""
-
-    struct SignInResult {
-        let accountId: String
-        let publicKey: String?
-        let walletId: String
-        let signedMessage: String?
-    }
 
     var body: some View {
         NavigationView {
@@ -55,7 +48,6 @@ struct SignInAndSignMessageDemoView: View {
 
                         Button(action: {
                             walletManager.disconnect()
-                            result = nil
                         }) {
                             Text("Disconnect first to test connect flow")
                                 .foregroundColor(.red)
@@ -76,26 +68,6 @@ struct SignInAndSignMessageDemoView: View {
                         }
                     }
                     .disabled(isProcessing || message.isEmpty || recipient.isEmpty || walletManager.isSignedIn)
-                }
-
-                if let result {
-                    Section(header: Text("Result")) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            resultRow("Account", value: result.accountId)
-                            resultRow("Wallet", value: result.walletId)
-                            if let publicKey = result.publicKey {
-                                resultRow("Public Key", value: publicKey)
-                            }
-                            if let signedMessage = result.signedMessage {
-                                resultRow("Signed Message", value: signedMessage)
-                            } else {
-                                Text("Signed message: not returned (wallet may not support this feature)")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        .textSelection(.enabled)
-                    }
                 }
 
                 Section {
@@ -120,18 +92,8 @@ struct SignInAndSignMessageDemoView: View {
         }
     }
 
-    private func resultRow(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.caption)
-                .foregroundColor(.green)
-        }
-    }
-
     private func connectAndSign() {
+        let params = "message: \(message), recipient: \(recipient)"
         Task {
             isProcessing = true
             defer { isProcessing = false }
@@ -141,13 +103,16 @@ struct SignInAndSignMessageDemoView: View {
                     message: message,
                     recipient: recipient
                 )
-                result = SignInResult(
-                    accountId: signInResult.account.accountId,
-                    publicKey: signInResult.account.publicKey,
-                    walletId: signInResult.account.walletId,
-                    signedMessage: signInResult.signedMessage
-                )
+                var output = "account: \(signInResult.account.accountId), wallet: \(signInResult.account.walletId)"
+                if let pk = signInResult.account.publicKey {
+                    output += ", publicKey: \(pk)"
+                }
+                if let sig = signInResult.signedMessage {
+                    output += "\nsignedMessage: \(sig)"
+                }
+                onLog?("connectAndSignMessage", params, output, false)
             } catch {
+                onLog?("connectAndSignMessage", params, error.localizedDescription, true)
                 errorMessage = error.localizedDescription
                 showError = true
             }

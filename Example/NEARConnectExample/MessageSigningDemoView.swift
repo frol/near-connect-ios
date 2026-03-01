@@ -4,13 +4,13 @@ import NEARConnect
 struct MessageSigningDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @Environment(\.dismiss) private var dismiss
+    var onLog: ((_ action: String, _ params: String, _ output: String, _ isError: Bool) -> Void)?
 
     @State private var contractId = "guest-book.near"
     @State private var methodName = "add_message"
     @State private var argsText = "{\"text\": \"Hello from iOS!\"}"
     @State private var deposit = "0"
     @State private var isProcessing = false
-    @State private var result: String?
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -72,14 +72,6 @@ struct MessageSigningDemoView: View {
                     .disabled(isProcessing || contractId.isEmpty || methodName.isEmpty)
                 }
 
-                if let result {
-                    Section(header: Text("Result")) {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .textSelection(.enabled)
-                    }
-                }
             }
             .navigationTitle("Call Contract")
             .navigationBarTitleDisplayMode(.inline)
@@ -106,6 +98,7 @@ struct MessageSigningDemoView: View {
         }
 
         let depositYocto = NEARWalletManager.toYoctoNEAR(deposit) ?? "0"
+        let params = "contract: \(contractId), method: \(methodName), args: \(argsText), deposit: \(deposit) NEAR"
 
         Task {
             isProcessing = true
@@ -118,8 +111,10 @@ struct MessageSigningDemoView: View {
                     args: args,
                     deposit: depositYocto
                 )
-                result = "Contract called!\n\nHash: \(txResult.transactionHashes.joined(separator: "\n"))"
+                let hashes = txResult.transactionHashes.joined(separator: ", ")
+                onLog?("callFunction", params, "Hashes: \(hashes)", false)
             } catch {
+                onLog?("callFunction", params, error.localizedDescription, true)
                 errorMessage = error.localizedDescription
                 showError = true
             }

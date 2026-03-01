@@ -1,6 +1,15 @@
 import SwiftUI
 import NEARConnect
 
+struct LogEntry: Identifiable {
+    let id = UUID()
+    let date = Date()
+    let action: String
+    let params: String
+    let output: String
+    let isError: Bool
+}
+
 struct ContentView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @State private var showTransactionDemo = false
@@ -10,6 +19,7 @@ struct ContentView: View {
     @State private var accountBalance: String?
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var logEntries: [LogEntry] = []
 
     var body: some View {
         NavigationView {
@@ -32,6 +42,10 @@ struct ContentView: View {
                             connectPrompt
                         }
 
+                        if !logEntries.isEmpty {
+                            eventLogView
+                        }
+
                         Spacer(minLength: 40)
                         footerView
                     }
@@ -44,19 +58,19 @@ struct ContentView: View {
                     .environmentObject(walletManager)
             }
             .sheet(isPresented: $showTransactionDemo) {
-                TransactionDemoView()
+                TransactionDemoView(onLog: appendLog)
                     .environmentObject(walletManager)
             }
             .sheet(isPresented: $showContractCallDemo) {
-                MessageSigningDemoView()
+                MessageSigningDemoView(onLog: appendLog)
                     .environmentObject(walletManager)
             }
             .sheet(isPresented: $showConnectAndSignDemo) {
-                SignInAndSignMessageDemoView()
+                SignInAndSignMessageDemoView(onLog: appendLog)
                     .environmentObject(walletManager)
             }
             .sheet(isPresented: $showDelegateActionDemo) {
-                DelegateActionDemoView()
+                DelegateActionDemoView(onLog: appendLog)
                     .environmentObject(walletManager)
             }
             .alert("Error", isPresented: $showError) {
@@ -242,6 +256,63 @@ struct ContentView: View {
             .foregroundColor(.secondary.opacity(0.8))
         }
         .padding(.bottom, 20)
+    }
+
+    // MARK: - Event Log
+
+    private var eventLogView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Event Log")
+                    .font(.headline)
+                Spacer()
+                Button("Clear") {
+                    logEntries.removeAll()
+                }
+                .font(.caption)
+            }
+
+            ForEach(logEntries.reversed()) { entry in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(entry.action)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(entry.isError ? .red : .green)
+                        Spacer()
+                        Text(entry.date, style: .time)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    if !entry.params.isEmpty {
+                        Text(entry.params)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(3)
+                    }
+                    Text(entry.output)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(entry.isError ? .red.opacity(0.8) : .primary.opacity(0.8))
+                        .textSelection(.enabled)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(uiColor: .secondarySystemBackground))
+                )
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(uiColor: .systemBackground))
+                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        )
+    }
+
+    private func appendLog(action: String, params: String, output: String, isError: Bool) {
+        logEntries.append(LogEntry(action: action, params: params, output: output, isError: isError))
     }
 
     private func fetchBalance() async {

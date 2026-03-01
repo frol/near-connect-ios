@@ -4,12 +4,12 @@ import NEARConnect
 struct DelegateActionDemoView: View {
     @EnvironmentObject var walletManager: NEARWalletManager
     @Environment(\.dismiss) private var dismiss
+    var onLog: ((_ action: String, _ params: String, _ output: String, _ isError: Bool) -> Void)?
 
     @State private var receiverId = "guest-book.near"
     @State private var methodName = "add_message"
     @State private var argsText = "{\"text\": \"Hello via meta tx!\"}"
     @State private var isProcessing = false
-    @State private var result: String?
     @State private var showError = false
     @State private var errorMessage = ""
 
@@ -64,15 +64,6 @@ struct DelegateActionDemoView: View {
                     .disabled(isProcessing || receiverId.isEmpty || methodName.isEmpty)
                 }
 
-                if let result {
-                    Section(header: Text("Signed Result")) {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(.green)
-                            .textSelection(.enabled)
-                    }
-                }
-
                 Section {
                     Text("The signed delegate actions can be submitted to the network by a relayer service that pays for gas.")
                         .font(.caption)
@@ -123,6 +114,7 @@ struct DelegateActionDemoView: View {
             ]
         ]
 
+        let params = "receiver: \(receiverId), method: \(methodName), args: \(argsText)"
         Task {
             isProcessing = true
             defer { isProcessing = false }
@@ -131,13 +123,10 @@ struct DelegateActionDemoView: View {
                 let delegateResult = try await walletManager.signDelegateActions(
                     delegateActions: delegateActions
                 )
-                if let raw = delegateResult.rawResult {
-                    let truncated = raw.prefix(500)
-                    result = "Signed delegate actions!\n\n\(truncated)\(raw.count > 500 ? "..." : "")"
-                } else {
-                    result = "Signed delegate actions! (no raw result returned)"
-                }
+                let output = delegateResult.rawResult ?? "(no raw result returned)"
+                onLog?("signDelegateActions", params, output, false)
             } catch {
+                onLog?("signDelegateActions", params, error.localizedDescription, true)
                 errorMessage = error.localizedDescription
                 showError = true
             }
