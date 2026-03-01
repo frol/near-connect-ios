@@ -52,6 +52,11 @@ public class NEARWalletManager: ObservableObject {
     private var messageContinuation: CheckedContinuation<MessageSignResult, any Error>?
     private var delegateActionContinuation: CheckedContinuation<DelegateActionResult, any Error>?
 
+    // MARK: - Ledger BLE
+
+    /// Manages Bluetooth communication with Ledger hardware wallets.
+    public let ledgerBLE = LedgerBLEManager()
+
     // MARK: - Persistence
 
     private let userDefaults: UserDefaults
@@ -72,9 +77,16 @@ public class NEARWalletManager: ObservableObject {
         config.allowsInlineMediaPlayback = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
+        // Register custom URL scheme handler for serving ledger-executor.js.
+        // near-connect fetches executor URLs with query params (?nonce=...) which
+        // breaks blob URLs. A custom scheme survives query param modification.
+        let ledgerHandler = LedgerSchemeHandler()
+        config.setURLSchemeHandler(ledgerHandler, forURLScheme: LedgerSchemeHandler.scheme)
+
         let contentController = WKUserContentController()
         contentController.add(coordinator, name: "nearConnect")
         contentController.add(coordinator, name: "nearConnectLog")
+        contentController.add(coordinator, name: "ledgerBLE")
 
         // Override console.log/warn/error to forward messages to Swift
         let consoleOverride = WKUserScript(source: """
@@ -122,13 +134,17 @@ public class NEARWalletManager: ObservableObject {
             return
         }
 
-        if let htmlContent = try? String(contentsOf: htmlURL, encoding: .utf8) {
-            let modifiedHTML = htmlContent.replacingOccurrences(
-                of: "window.location.search",
-                with: "'?network=\(network.rawValue)'"
-            )
-            bridgeWebView.loadHTMLString(modifiedHTML, baseURL: URL(string: "https://near-connect-bridge.local/")!)
+        guard var htmlContent = try? String(contentsOf: htmlURL, encoding: .utf8) else {
+            lastError = "Failed to read bridge HTML"
+            return
         }
+
+        htmlContent = htmlContent.replacingOccurrences(
+            of: "window.location.search",
+            with: "'?network=\(network.rawValue)'"
+        )
+
+        bridgeWebView.loadHTMLString(htmlContent, baseURL: URL(string: "https://near-connect-bridge.local/")!)
     }
 
     /// Remove all popup webviews (wallet pages opened via window.open).
@@ -684,6 +700,15 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
                 return
             }
 
+            // Handle Ledger BLE commands from JS
+            if message.name == "ledgerBLE",
+               let body = message.body as? [String: Any],
+               let action = body["action"] as? String {
+                let requestId = body["id"] as? String ?? ""
+                self.handleLedgerBLEAction(action, body: body, requestId: requestId)
+                return
+            }
+
             guard message.name == "nearConnect",
                   let body = message.body as? [String: Any],
                   let type = body["type"] as? String else {
@@ -886,5 +911,112 @@ class WebViewCoordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate
         completionHandler: @escaping (Bool) -> Void
     ) {
         completionHandler(true)
+    }
+
+    // MARK: - Ledger BLE Bridge
+
+    /// Handle Ledger BLE commands from JavaScript.
+    ///
+    /// The JS side sends messages via `window.webkit.messageHandlers.ledgerBLE.postMessage()`
+    /// with `action`, `id`, and optional params. The Swift side executes the BLE operation
+    /// and calls back into JS with `window._ledgerBLECallback(id, result, error)`.
+    func handleLedgerBLEAction(_ action: String, body: [String: Any], requestId: String) {
+        guard let manager = manager else { return }
+        let ledger = manager.ledgerBLE
+        print("[LedgerBLE] handleAction: \(action) id=\(requestId)")
+
+        switch action {
+        case "scan":
+            ledger.startScanning()
+            respondToJS(requestId: requestId, result: "true")
+
+        case "stopScan":
+            ledger.stopScanning()
+            respondToJS(requestId: requestId, result: "true")
+
+        case "getDevices":
+            let devices = ledger.discoveredDevices.map { device -> [String: String] in
+                ["id": device.id.uuidString, "name": device.name]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: devices),
+               let json = String(data: data, encoding: .utf8) {
+                respondToJS(requestId: requestId, result: json)
+            } else {
+                respondToJS(requestId: requestId, result: "[]")
+            }
+
+        case "connect":
+            let deviceName = body["deviceName"] as? String ?? ""
+            Task {
+                do {
+                    // Find device by name (or use first if empty)
+                    guard let device = deviceName.isEmpty
+                        ? ledger.discoveredDevices.first
+                        : ledger.discoveredDevices.first(where: { $0.name == deviceName })
+                    else {
+                        self.respondToJS(requestId: requestId, error: "No Ledger device found")
+                        return
+                    }
+                    try await ledger.connect(to: device)
+                    // Negotiate MTU after connection for optimal frame size
+                    try await ledger.negotiateMTU()
+                    self.respondToJS(requestId: requestId, result: "true")
+                } catch {
+                    self.respondToJS(requestId: requestId, error: error.localizedDescription)
+                }
+            }
+
+        case "disconnect":
+            ledger.disconnect()
+            respondToJS(requestId: requestId, result: "true")
+
+        case "exchange":
+            guard let commandArray = body["command"] as? [Int] else {
+                respondToJS(requestId: requestId, error: "Missing command data")
+                return
+            }
+            let apduData = Data(commandArray.map { UInt8(clamping: $0) })
+            Task {
+                do {
+                    let response = try await ledger.exchange(apdu: apduData)
+                    // Return response as array of integers (matching Tauri bridge format)
+                    let responseArray = response.map { Int($0) }
+                    if let data = try? JSONSerialization.data(withJSONObject: responseArray),
+                       let json = String(data: data, encoding: .utf8) {
+                        self.respondToJS(requestId: requestId, result: json)
+                    } else {
+                        self.respondToJS(requestId: requestId, error: "Failed to encode response")
+                    }
+                } catch {
+                    self.respondToJS(requestId: requestId, error: error.localizedDescription)
+                }
+            }
+
+        case "isConnected":
+            let connected = ledger.connectedDevice != nil
+            respondToJS(requestId: requestId, result: connected ? "true" : "false")
+
+        case "isBluetoothReady":
+            respondToJS(requestId: requestId, result: ledger.isBluetoothReady ? "true" : "false")
+
+        default:
+            respondToJS(requestId: requestId, error: "Unknown ledgerBLE action: \(action)")
+        }
+    }
+
+    /// Call back into JavaScript with the result of a Ledger BLE operation.
+    private func respondToJS(requestId: String, result: String? = nil, error: String? = nil) {
+        let escapedId = requestId.replacingOccurrences(of: "'", with: "\\'")
+        let js: String
+        if let error {
+            let escapedError = error.replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            js = "window._ledgerBLECallback && window._ledgerBLECallback('\(escapedId)', null, '\(escapedError)')"
+        } else {
+            let safeResult = result ?? "null"
+            js = "window._ledgerBLECallback && window._ledgerBLECallback('\(escapedId)', \(safeResult), null)"
+        }
+        print("[LedgerBLE] respondToJS id=\(requestId) error=\(error ?? "nil") resultLen=\(result?.count ?? 0)")
+        manager?.bridgeWebView.callNEARConnect(js)
     }
 }

@@ -95,6 +95,11 @@
             );
         }
 
+        // Ledger executor URL. near-connect fetches this URL (with ?nonce=...
+        // appended) and injects the response text into an iframe srcdoc.
+        // Must be a real HTTPS URL since fetch() doesn't support custom schemes.
+        const _ledgerExecutorURL = "https://raw.githubusercontent.com/frol/near-connect-ios/refs/heads/main/Sources/NEARConnect/Resources/ledger-executor.js";
+
         let connector = null;
 
         async function init(network) {
@@ -131,6 +136,42 @@
                 });
 
                 postToSwift("ready", {});
+
+                // Register Ledger hardware wallet (BLE via Swift bridge)
+                try {
+                    console.log("[NEARConnect] Registering Ledger wallet with executor URL:", _ledgerExecutorURL);
+                    await connector.whenManifestLoaded;
+                    await connector.registerWallet({
+                        id: "ledger",
+                        name: "Ledger",
+                        icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23000'/%3E%3Cpath d='M24.5 6H10v17.5h17.5V10.5A4.5 4.5 0 0024.5 6zM6 6v5h4V6H6zm0 9v4h4v-4H6zm0 8v11h5.5v-4h-1.5v-3H6v-4zm22 7v4h5.5a4.5 4.5 0 004.5-4.5V30h-4v4H28zm8-8v4h4v-4h-4zm0-9v4h4v-4h-4z' fill='%23fff'/%3E%3C/svg%3E",
+                        description: "Ledger hardware wallet via Bluetooth",
+                        website: "https://www.ledger.com",
+                        version: "1.0.0",
+                        executor: _ledgerExecutorURL,
+                        type: "sandbox",
+                        platform: [],
+                        features: {
+                            signMessage: true,
+                            signTransaction: true,
+                            signInWithoutAddKey: false,
+                            signInAndSignMessage: true,
+                            signAndSendTransaction: true,
+                            signAndSendTransactions: true,
+                            signDelegateActions: true,
+                            mainnet: true,
+                            testnet: true,
+                        },
+                        permissions: {
+                            storage: true,
+                            bluetooth: true,
+                            allowsOpen: [],
+                        },
+                    });
+                    console.log("[NEARConnect] Ledger wallet registered successfully");
+                } catch (e) {
+                    console.warn("[NEARConnect] Failed to register Ledger wallet:", e);
+                }
             } catch (err) {
                 postToSwift("error", { message: "Init failed: " + err.message });
             }
@@ -523,6 +564,56 @@
             } catch (err) {
                 postToSwift("messageError", { message: err.message });
             }
+        };
+
+        // ================================================================
+        // Ledger BLE Bridge Relay
+        //
+        // The Ledger executor runs inside a near-connect sandbox iframe.
+        // The iframe cannot access window.webkit.messageHandlers directly
+        // (different origin). So we relay messages between the iframe
+        // (via postMessage) and Swift (via ledgerBLE message handler).
+        // ================================================================
+
+        const LEDGER_BLE_REQUEST = "near-connect:ledger-ble:request";
+        const LEDGER_BLE_RESPONSE = "near-connect:ledger-ble:response";
+
+        // Listen for Ledger BLE requests from the sandbox iframe
+        window.addEventListener("message", (event) => {
+            if (!event.data || event.data.type !== LEDGER_BLE_REQUEST) return;
+            const { id, action, params } = event.data;
+            console.log("[BLE Relay] iframe→Swift:", action, "id:", id, "params:", JSON.stringify(params));
+            try {
+                window.webkit.messageHandlers.ledgerBLE.postMessage({
+                    action,
+                    id,
+                    ...(params || {}),
+                });
+            } catch (e) {
+                console.error("[BLE Relay] Swift bridge unavailable:", e.message);
+                // Respond with error if Swift bridge unavailable
+                if (event.source) {
+                    event.source.postMessage({
+                        type: LEDGER_BLE_RESPONSE,
+                        id,
+                        error: "Swift BLE bridge unavailable: " + e.message,
+                    }, "*");
+                }
+            }
+        });
+
+        // Swift calls _ledgerBLECallback(id, result, error) — relay to iframe
+        window._ledgerBLECallback = function(id, result, error) {
+            const iframes = document.querySelectorAll("iframe");
+            console.log("[BLE Relay] Swift→iframe:", "id:", id, "error:", error, "result type:", typeof result, "iframes:", iframes.length);
+            const message = { type: LEDGER_BLE_RESPONSE, id, result, error };
+            iframes.forEach(iframe => {
+                try {
+                    iframe.contentWindow.postMessage(message, "*");
+                } catch (e) {
+                    console.error("[BLE Relay] postMessage to iframe failed:", e.message);
+                }
+            });
         };
 
         // Capture unhandled errors and forward to Swift for debugging

@@ -14,9 +14,22 @@
 		A2000001 /* NEARConnectExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NEARConnectExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9A1134B22F54DC980081E99A /* Exceptions for "NEARConnectExample" folder in "NEARConnectExample" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A6000001 /* NEARConnectExample */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A3000001 /* NEARConnectExample */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9A1134B22F54DC980081E99A /* Exceptions for "NEARConnectExample" folder in "NEARConnectExample" target */,
+			);
 			path = NEARConnectExample;
 			sourceTree = "<group>";
 		};
@@ -258,6 +271,8 @@
 				DEVELOPMENT_TEAM = 52T3Z37W7W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NEARConnectExample/Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NEAR ​Connect needs ​Bluetooth to communicate with your ​Ledger hardware wallet.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -285,6 +300,8 @@
 				DEVELOPMENT_TEAM = 52T3Z37W7W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NEARConnectExample/Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NEAR ​Connect needs ​Bluetooth to communicate with your ​Ledger hardware wallet.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

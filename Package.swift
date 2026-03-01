@@ -17,7 +17,8 @@ let package = Package(
         .target(
             name: "NEARConnect",
             resources: [
-                .copy("Resources/near-connect-bridge.html")
+                .copy("Resources/near-connect-bridge.html"),
+                .copy("Resources/ledger-executor.js"),
             ],
             swiftSettings: [
                 .enableUpcomingFeature("MemberImportVisibility"),
