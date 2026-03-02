@@ -1,12 +1,12 @@
 # near-connect-ios
 
-iOS Swift Package wrapping [near-connect](https://github.com/frol/near-connect-ios) — connect third-party NEAR Protocol wallets from a native iOS app.
+iOS Swift Package wrapping [near-connect](https://github.com/azbang/near-connect) — connect third-party NEAR Protocol wallets from a native iOS app.
 
 Uses a lightweight WKWebView bridge to load the [`@hot-labs/near-connect`](https://www.npmjs.com/package/@hot-labs/near-connect) JavaScript library, giving your app access to the full wallet ecosystem without reimplementing any wallet-specific protocols.
 
 ## Supported wallets
 
-All wallets in the [near-connect manifest](https://github.com/frol/near-connect-ios/blob/main/repository/manifest.json) work out of the box:
+All wallets in the [near-connect manifest](https://github.com/azbang/near-connect/blob/main/repository/manifest.json) work out of the box:
 
 | Wallet | Type | Status |
 |--------|------|--------|
