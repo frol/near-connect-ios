@@ -8,6 +8,8 @@
 // Swift BLE Bridge Transport
 // ============================================================================
 
+console.log("LEDGER FIX");
+
 // Message types for parent frame relay
 const LEDGER_BLE_REQUEST = "near-connect:ledger-ble:request";
 const LEDGER_BLE_RESPONSE = "near-connect:ledger-ble:response";
