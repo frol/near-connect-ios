@@ -428,7 +428,7 @@ async function promptForLedgerConnect() {
                 </button>
               </div>
               <p style="font-family:-apple-system,sans-serif; font-size:16px; color:#a3a3a3; line-height:1.5; margin:0;">
-                Make sure your <strong style="color:#fafafa;">Ledger Nano X</strong> is unlocked with Bluetooth enabled and the <strong style="color:#fafafa;">NEAR app</strong> is installed.
+                Make sure your <strong style="color:#fafafa;">Ledger device</strong> is unlocked with Bluetooth enabled and the <strong style="color:#fafafa;">NEAR app</strong> is installed.
               </p>
             </div>
             <div style="display:flex; flex-direction:column; gap:16px;">
