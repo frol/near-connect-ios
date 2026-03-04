@@ -98,8 +98,10 @@ public class LedgerBLEManager: NSObject, ObservableObject {
 
     // MARK: - Private State
 
-    private var centralManager: CBCentralManager!
-    private var bleDelegate: BLEDelegate!
+    /// Created lazily via `ensureCentralManager()` to defer the Bluetooth
+    /// permission prompt until Ledger functionality is actually used.
+    private var centralManager: CBCentralManager?
+    private var bleDelegate: BLEDelegate?
     /// Write-with-response characteristic (UUID suffix 0002)
     private var writeCharacteristic: CBCharacteristic?
     /// Write-without-response characteristic (UUID suffix 0003), preferred when available
@@ -133,26 +135,37 @@ public class LedgerBLEManager: NSObject, ObservableObject {
 
     public override init() {
         super.init()
-        bleDelegate = BLEDelegate(manager: self)
-        centralManager = CBCentralManager(delegate: bleDelegate, queue: nil)
+    }
+
+    /// Initialize the CBCentralManager on first use. This triggers the
+    /// Bluetooth permission prompt, so it is deferred until needed.
+    @discardableResult
+    private func ensureCentralManager() -> CBCentralManager {
+        if let cm = centralManager { return cm }
+        let delegate = BLEDelegate(manager: self)
+        let cm = CBCentralManager(delegate: delegate, queue: nil)
+        bleDelegate = delegate
+        centralManager = cm
+        return cm
     }
 
     // MARK: - Public API
 
     /// Whether Bluetooth is available and powered on.
     public var isBluetoothReady: Bool {
-        centralManager.state == .poweredOn
+        centralManager?.state == .poweredOn
     }
 
     /// Start scanning for Ledger devices.
     public func startScanning() {
-        guard centralManager.state == .poweredOn else {
-            print("[LedgerBLE] Bluetooth not ready, state: \(centralManager.state.rawValue)")
+        let cm = ensureCentralManager()
+        guard cm.state == .poweredOn else {
+            print("[LedgerBLE] Bluetooth not ready, state: \(cm.state.rawValue)")
             return
         }
         discoveredDevices.removeAll()
         isScanning = true
-        centralManager.scanForPeripherals(
+        cm.scanForPeripherals(
             withServices: Self.allServiceUUIDs,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
@@ -160,24 +173,25 @@ public class LedgerBLEManager: NSObject, ObservableObject {
 
     /// Stop scanning for devices.
     public func stopScanning() {
-        centralManager.stopScan()
+        centralManager?.stopScan()
         isScanning = false
     }
 
     /// Connect to a specific Ledger device.
     public func connect(to device: LedgerDevice) async throws {
+        let cm = ensureCentralManager()
         stopScanning()
 
         return try await withCheckedThrowingContinuation { continuation in
             self.connectContinuation = continuation
-            self.centralManager.connect(device.peripheral, options: nil)
+            cm.connect(device.peripheral, options: nil)
         }
     }
 
     /// Disconnect from the currently connected device.
     public func disconnect() {
         guard let device = connectedDevice else { return }
-        centralManager.cancelPeripheralConnection(device.peripheral)
+        centralManager?.cancelPeripheralConnection(device.peripheral)
         cleanUpConnection()
     }
 
