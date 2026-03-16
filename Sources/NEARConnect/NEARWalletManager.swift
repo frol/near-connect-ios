@@ -62,10 +62,20 @@ public class NEARWalletManager: ObservableObject {
     private let userDefaults: UserDefaults
     private let accountStorageKey = "near_connected_account"
 
+    // MARK: - Features
+
+    /// Feature flags to pass to the NearConnector constructor.
+    /// Example: `["signInAndSignMessage": true, "signDelegateActions": true]`
+    private let features: [String: Bool]
+
     // MARK: - Init
 
-    public init(userDefaults: UserDefaults = .standard) {
+    public init(
+        userDefaults: UserDefaults = .standard,
+        features: [String: Bool] = [:]
+    ) {
         self.userDefaults = userDefaults
+        self.features = features
         loadStoredAccount()
         setupBridgeWebView()
     }
@@ -142,6 +152,21 @@ public class NEARWalletManager: ObservableObject {
         htmlContent = htmlContent.replacingOccurrences(
             of: "window.location.search",
             with: "'?network=\(network.rawValue)'"
+        )
+
+        // Inject features configuration
+        let featuresJSON: String
+        if features.isEmpty {
+            featuresJSON = "{}"
+        } else if let data = try? JSONSerialization.data(withJSONObject: features),
+                  let json = String(data: data, encoding: .utf8) {
+            featuresJSON = json
+        } else {
+            featuresJSON = "{}"
+        }
+        htmlContent = htmlContent.replacingOccurrences(
+            of: "/*__FEATURES__*/{}",
+            with: featuresJSON
         )
 
         bridgeWebView.loadHTMLString(htmlContent, baseURL: URL(string: "https://near-connect-bridge.local/")!)

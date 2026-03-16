@@ -42,6 +42,7 @@
             try {
                 connector = new NearConnector({
                     network: network || "mainnet",
+                    features: /*__FEATURES__*/{},
                 });
 
                 connector.on("wallet:signIn", (event) => {
